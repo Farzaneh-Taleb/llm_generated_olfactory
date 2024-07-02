@@ -199,3 +199,128 @@ def plot_bars(data, title, filename):
     plt.savefig(filename,
                 bbox_inches="tight"
                 )
+
+    def change_width(ax, new_value):
+        for patch in ax.patches:
+            current_width = patch.get_width()
+            diff = current_width - new_value
+
+            # we change the bar width
+            patch.set_width(new_value)
+
+            # we recenter the bar
+            patch.set_x(patch.get_x() + diff * .5)
+
+def combine_visualize(df1, df2, df3, tasks, ax, title, type="corr", figure_name="def"):
+    df12 = pd.concat((df1, df2))
+    df_combined = pd.concat((df12, df3))
+    melted_df_keller = df_combined.melt(id_vars=['model'], var_name='descritpor')
+    # g1.despine(left=True)
+    # g1.set_axis_labels("", title)
+    # g1.legend.set_title("")
+    # g1.set_xticklabels(tasks, rotation=45)
+    if type == "corr":
+        melted_df_keller['value'] = melted_df_keller['value'].abs()
+    else:
+        # melted_df_keller['value'] = melted_df_keller[['value']].apply(np.sqrt)
+        pass
+    print(melted_df_keller.groupby('model')['value'].mean().reset_index())
+    print(melted_df_keller.groupby('model')['value'].sem().reset_index() * 2)
+    g1 = sns.barplot(
+        data=melted_df_keller,
+        x="descritpor", y="value", hue="model",
+        errorbar="se", ax=ax, palette=['#4d79a4', '#ecc947', '#b07aa0'], linewidth=7)
+    g1.set(xlabel='Model', ylabel=title)
+    g1.spines['top'].set_visible(False)
+    g1.spines['right'].set_visible(False)
+    # g2 = sns.barplot(
+    # data=melted_df_keller,
+    # x="model", y="value",
+    # errorbar="sd", palette="dark", alpha=.6)
+    # g2.despine(left=True)
+    # g2.set_axis_labels("", "Body mass (g)")
+    # g2.legend.set_title("")
+    g1.set_xticklabels(tasks, rotation=90)
+    # change_width(g1, 0.1)
+    # g1.figure.savefig(figure_name+".pdf")
+    return g1
+
+def combine_visualize_separate(df1, df2, df3, tasks, ax, title, type="corr", figure_name="def"):
+    df12 = pd.concat((df1, df2))
+    df_combined = pd.concat((df12, df3))
+    melted_df_keller = df_combined.melt(id_vars=['model'], var_name='descritpor')
+    # g1 = sns.catplot(
+    # data=melted_df_keller, kind="bar",
+    # x="descritpor", y="value", hue="model",
+    # errorbar="sd", palette="dark", alpha=.6, height=6,aspect =2 )
+    # g1.despine(left=True)
+    # g1.set_axis_labels("", "Body mass (g)")
+    # g1.legend.set_title("")
+    # g1.set_xticklabels(tasks, rotation=45)
+    if type == "corr":
+        melted_df_keller['value'] = melted_df_keller['value'].abs()
+    else:
+        pass
+        # melted_df_keller['value'] = melted_df_keller[['value']].apply(np.sqrt)
+    print(melted_df_keller.groupby('model')['value'].mean().reset_index())
+    print(melted_df_keller.groupby('model')['value'].sem().reset_index() * 2)
+    g2 = sns.barplot(
+        data=melted_df_keller,
+        x="model", y="value",
+        errorbar="se", palette="dark", alpha=.6, ax=ax)
+    # g2.set_axis_labels("", title)
+    g2.set(xlabel='Model', ylabel=title)
+    # g2.despine(left=True)
+    # g2.set_axis_labels("", "Body mass (g)")
+    # g2.legend.set_title("")
+    # g.set_xticklabels(tasks, rotation=45)
+    # g2.figure.savefig(figure_name+".pdf")
+def post_process_dataframe(corrss, msess, df_cor_pom, df_cor_alva, df_mse_pom, df_mse_alva, tasks,
+                           figure_name="def"):
+    plt.rcParams["font.size"] = 40
+    corrss_1_12 = corrss.loc[((corrss["layer"] == 0) | (corrss["layer"] == 12)) & (corrss["model"] == "molformer")]
+    del corrss_1_12["model"]
+    melted_corrss_1_12 = corrss_1_12.melt(id_vars=['layer'], var_name='descritpor')
+    melted_corrss_filtered_increasing = melted_corrss_1_12.groupby('descritpor').filter(
+        lambda x: x.loc[x['layer'] == 12, 'value'].abs().mean() > x.loc[x['layer'] == 0, 'value'].abs().mean())
+    melted_corrss_filtered_decreasing = melted_corrss_1_12.groupby('descritpor').filter(
+        lambda x: x.loc[x['layer'] == 0, 'value'].abs().mean() > x.loc[x['layer'] == 12, 'value'].abs().mean())
+    print(melted_corrss_1_12.descritpor.unique())
+    melted_corrss_filtered_increasing['trend'] = 'Increasing'
+    melted_corrss_filtered_decreasing['trend'] = 'Decreasing'
+    melted_corrss_filtered = pd.concat((melted_corrss_filtered_increasing, melted_corrss_filtered_decreasing))
+    # fig, ax = plt.subplots(nrows=1,ncols=2,figsize=(30,10))
+    # sns.lineplot(
+    # data=melted_corrss_filtered_increasing, x="layer", y="value", hue="descritpor", err_style='bars',ax=ax[0]
+    # )
+    # sns.lineplot(
+    # data=melted_corrss_filtered_decreasing, x="layer", y="value", hue="descritpor", err_style='bars',ax=ax[1]
+    # )
+    # f1, ax_agg = plt.subplots(1, 2,figsize=(20, 5))
+    f2, ax = plt.subplots(2, 1, figsize=(22, 22))
+    # combine_visualize_separate(corrss.loc[corrss["layer"]==12,].iloc[:,corrss.columns != 'layer'], df_cor_pom,df_cor_alva,tasks,ax_agg[0],'Correlation Coefficient',figure_name="Correlation_Avg_"+figure_name)
+    g1 = combine_visualize(corrss.loc[corrss["layer"] == 12].iloc[:, corrss.columns != 'layer'], df_cor_pom,
+                           df_cor_alva, tasks, ax[0], 'Correlation Coefficient',
+                           figure_name="Correlation_" + figure_name)
+    g1.set_xlabel('')
+    # combine_visualize_separate(msess.loc[msess["layer"]==12].iloc[:,msess.columns != 'layer'], df_mse_pom,df_mse_alva,tasks,ax_agg[1],'MSE',type="mse",figure_name="MSE_Avg_"+figure_name)
+    g2 = combine_visualize(msess.loc[msess["layer"] == 12].iloc[:, msess.columns != 'layer'], df_mse_pom,
+                           df_mse_alva, tasks, ax[1], 'NRMSE', type="mse", figure_name="MSE__" + figure_name)
+    g2.set_xlabel('Descriptor')
+    g1.legend().set_title("Model")
+    handles, labels = g1.get_legend_handles_labels()
+    g1.get_legend().remove()
+    g2.legend().set_title("Model")
+    handles, labels = g2.get_legend_handles_labels()
+    g2.get_legend().remove()
+    print(labels)
+    f2.subplots_adjust(bottom=0.2, left=0.1, right=0.95, top=0.95)
+    labels = ['MoLFormer', 'Open-POM', 'DAM']
+    f2.legend(handles, labels, ncol=3, columnspacing=1, prop={'size': 40}, handlelength=1.5, loc="lower center",
+              borderpad=0.3,
+              bbox_to_anchor=(0.52, -0.07),
+              frameon=True, labelspacing=0.4, handletextpad=0.2, )
+    # plt.legend(title='Smoker', loc='upper left',)
+    plt.subplots_adjust(hspace=0.6)
+    f2.savefig(figure_name + ".pdf", bbox_inches='tight')
+    return melted_corrss_filtered

@@ -5,6 +5,7 @@ import torch
 from fast_transformers.masking import LengthMask as LM
 import deepchem as dc
 import ast
+from constants import *
 # from util_alignment import *
 
 def batch_split(data, batch_size=64):
@@ -667,30 +668,6 @@ def prepare_snitz_mols(df_snitz_mean,modeldeepchem_gslf,lm,tokenizer):
 
 def select_features(input_file):
     ds_alva = pd.read_csv(input_file)
-
-
-    chemical_features_r=["nCIR",
-                     "ZM1", 
-                     "GNar", 
-                     "S1K", 
-                     "piPC08",
-                     "MATS1v",
-                     "MATS7v",
-                     "GATS1v", 
-                     "Eig05_AEA(bo)", 
-                     "SM02_AEA(bo)",
-                     "SM03_AEA(dm)",
-                     "SM10_AEA(dm)",
-                     "SM13_AEA(dm)",
-                      "SpMin3_Bh(v)",
-                     "RDF035v",
-                     "G1m",
-                     "G1v",
-                     "G1e",
-                     "G3s",
-                     "R8u+",
-                     "nRCOSR"]
-
     nonStereoSMILE = list(map(lambda x: "nonStereoSMILES___" + x, chemical_features_r))
     # IsomericSMILES = list(map(lambda x: "IsomericSMILES___" + x, chemical_features_r))
     selected_features = nonStereoSMILE
