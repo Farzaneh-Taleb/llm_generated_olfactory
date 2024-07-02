@@ -1,7 +1,7 @@
 import sys
-parent_dir = "/Midgard/home/farzantn/phd/Olfaction/MoLFormer_N2024"
+parent_dir = "/Midgard/home/user/phd/Olfaction/MoLFormer_N2024"
 sys.path.append(parent_dir)
-parent_dir="/Midgard/home/farzantn/mambaforge/envs/MolTran_CUDA11_cuda/lib/python3.8"
+parent_dir="/Midgard/home/user/mambaforge/envs/MolTran_CUDA11_cuda/lib/python3.8"
 sys.path.append(parent_dir)
 print(sys.path)
 import time
