@@ -4,7 +4,7 @@
 source /opt/cray/pe/cpe/23.12/restore_lmod_system_defaults.sh
 
 # load fmri grid
-source "/cfs/klemming/projects/supr/olfactory_alignment/olfactory-fmri-alignment-NEW/finetune_reg/fmri_finetune_grid.sh"
+source "/cfs/klemming/projects/supr/olfactory_alignment/llm_generated_olfactory/codes/transformers_preds/fmri_finetune_grid.sh"
 
 compute_total() {
   echo $(( ${#datasets[@]} * ${#subjects[@]} * ${#n_folds[@]} \

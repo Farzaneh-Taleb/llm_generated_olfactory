@@ -4,20 +4,20 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(parent_dir)
 
-from utils.config import BASE_DIR, SEED
+from utils.config import BASE_DIR, SEED, LAYERS_END, MODELS, MODELS, LAYERS_END
 from utils.helpers import *
 from utils.regression import compute_correlation
-from utils.model_config import MODELS, LAYERS_END
 from utils.arg_parser import create_behavior_parser, parse_common_args
-from utils.data_loader import load_behavior_embeddings,load_model_embeddings,load_fold_cids
+from utils.helpers import get_descriptors, set_seeds
 from datetime import datetime
 from pathlib import Path
 
-parser = create_behavior_parser('chem_exploration')
+
 
 
 def main():
     set_seeds(seed=SEED)
+    parser = create_behavior_parser('chem_exploration')
     args = parser.parse_args()
     args = parse_common_args(args)
     
