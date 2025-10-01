@@ -1,0 +1,13 @@
+numpy<2
+openai
+notebook
+ipykernel
+black
+pylint
+molfeat
+pyrfume
+pingouin
+statsmodels
+seaborn
+openpyxl
+selfies
