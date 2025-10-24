@@ -6,20 +6,32 @@ import pandas as pd
 from openai import OpenAI
 
 from utils.helpers import common_cids_per_ds
-from utils.ds_utils import get_descriptors
+from utils.ds_utils import get_descriptors2 as get_descriptors
 from utils.config import BASE_DIR
 
 # ---------------- Config ----------------
-RATE_MIN, RATE_MAX = -1.0, 1.0
 INCLUDE_CONFIDENCE = False
 INPUT_TYPE = "isomericsmiles"         # 'isomericsmiles' or 'cid'
 SYSTEM_MSG = "You are an olfactory rater. Output ONLY valid JSON."
 BATCH_REGISTRY = f"{BASE_DIR}/llm_responses/batch_registry.jsonl"
-
+# ---------------- Config ----------------
+RATE_RANGE = {
+    "keller2016": (0.0, 100.0),
+    "sagar2023": (-1,1),
+    "leffingwell": (0.0, 1.0),
+    "ravia": (0.0, 1.0),
+    "snitz": (0.0, 1.0),
+    # Add others as needed
+}
+# global RATE_MIN, RATE_MAX
 BUILD_PROMPT_CHOICES = ("bysmiles", "byname")
 
 client = OpenAI()  # uses OPENAI_API_KEY from env
-
+def get_rate_range(ds: str) -> tuple[float, float]:
+    """Return (RATE_MIN, RATE_MAX) for the given dataset."""
+    if ds not in RATE_RANGE:
+        raise ValueError(f"Unknown dataset: {ds}. Please add it to RATE_RANGE.")
+    return RATE_RANGE[ds]
 # -------- Registry I/O --------
 def log_batch_entry(
     ds: str,
@@ -160,6 +172,8 @@ def make_jsonl_for_batch(
     out_jsonl_path: str,
     build_prompt_type: str,
     n_repeats: int = 1,
+    *,
+    RATE_MIN: float, RATE_MAX: float
 ) -> tuple[int, int]:
     """
     Write one /v1/chat/completions request PER DEDUPED CID row, repeated n_repeats times.
@@ -243,7 +257,11 @@ def download_batch_outputs(
         - If only failures exist: returns just the errors file
         - If nothing downloadable yet: returns []
     """
-    b = client.batches.retrieve(batch_id)
+    try:
+        b = client.batches.retrieve(batch_id)
+    except Exception as e:
+        print(f"Error retrieving batch {batch_id}: {e}")
+        return "error", []
     state = b.status  # "queued" | "in_progress" | "completed" | "failed" | "cancelled" | "expired"
     print(f"Batch {batch_id} status: {state}")
 
@@ -297,6 +315,7 @@ def download_batch_outputs(
 def parse_chat_completion_jsonl_by_rowrep(
     jsonl_paths: List[str],
     descriptors: List[str],
+    *, RATE_MIN: float, RATE_MAX: float
 ) -> Dict[Tuple[int, int], Dict[str, Any]]:
     """
     Returns mapping (row_id, rep) -> validated scores dict.
@@ -396,21 +415,30 @@ def main():
 
     args = ap.parse_args()
 
+
     if args.cmd == "submit":
         ds = args.ds
+        RATE_MIN, RATE_MAX = get_rate_range(ds)
+        input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+        df = pd.read_csv(input_csv)
+        df["cid"] = pd.to_numeric(df["cid"], errors="coerce")
+        # Optional concentration filter if present
+        if "concentration" in df.columns and "keller" in ds.lower():
+            df["concentration"] = df["concentration"].astype(float)
+            df = df[df["concentration"] == 0.001].copy()
+        # Get CIDs common to the dataset (per your helpers API)
+        cids = sorted(map(int, common_cids_per_ds(df)))
+        # Keep only common CIDs (using your helper) and deduplicate by CID
+
+        df = df[df["cid"].isin(cids)].reset_index(drop=True)
+        df = df.drop_duplicates(subset=["cid"]).reset_index(drop=True)
+        # df =df.head(5)  # DEBUG LIMIT
         model_name = args.model_name
         build_prompt_type = args.build_prompt_type
         n_repeats = int(args.n_repeats)
         descriptors = get_descriptors(ds)
 
-        input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
-        df = pd.read_csv(input_csv)
-
-        # Keep only common CIDs (using your helper) and deduplicate by CID
-        cids = set(common_cids_per_ds(df))
-        df["cid"] = pd.to_numeric(df["cid"], errors="coerce").astype("Int64")
-        df = df[df["cid"].isin(cids)].reset_index(drop=True)
-        df = df.drop_duplicates(subset=["cid"]).reset_index(drop=True)
+        
 
         jsonl_path = f"tmp/{ds}_{model_name}_{args.temperature}_{build_prompt_type}_reps-{n_repeats}.jsonl"
 
@@ -423,6 +451,7 @@ def main():
             out_jsonl_path=jsonl_path,
             build_prompt_type=build_prompt_type,
             n_repeats=n_repeats,
+            RATE_MIN=RATE_MIN, RATE_MAX=RATE_MAX
         )
         print(f"Prepared JSONL: {jsonl_path}  (dedup_rows={total}, requests={used_reqs})")
 
@@ -434,6 +463,20 @@ def main():
         reg = load_registry()
         for entry in reg:
             ds = entry["ds"]
+            RATE_MIN, RATE_MAX = get_rate_range(ds)
+            input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+            df = pd.read_csv(input_csv)
+            df["cid"] = pd.to_numeric(df["cid"], errors="coerce")
+            # Optional concentration filter if present
+            if "concentration" in df.columns and "keller" in ds.lower():
+                df["concentration"] = df["concentration"].astype(float)
+                df = df[df["concentration"] == 0.001].copy()
+            # Get CIDs common to the dataset (per your helpers API)
+            cids = sorted(map(int, common_cids_per_ds(df)))
+            # Keep only common CIDs (using your helper) and deduplicate by CID
+
+            df = df[df["cid"].isin(cids)].reset_index(drop=True)
+            df = df.drop_duplicates(subset=["cid"]).reset_index(drop=True)
             model_name = entry["model_name"]
             temp = entry["temperature"]
             batch_id = entry["batch_id"]
@@ -457,19 +500,12 @@ def main():
             if not out_paths:
                 continue  # nothing to parse for scores
 
-            rowrep_to_scores = parse_chat_completion_jsonl_by_rowrep(paths, descriptors)
+            rowrep_to_scores = parse_chat_completion_jsonl_by_rowrep(paths, descriptors, RATE_MIN=RATE_MIN, RATE_MAX=RATE_MAX)
             output_csv = (
                 f"{BASE_DIR}/llm_responses/"
                 f"{ds}_odor_llm_scores_temp-{temp}_model-{model_name}_bpt-{build_prompt_type}_reps-{n_repeats}.csv"
             )
 
-            # Prepare the same deduped, common-CID dataframe as in 'submit'
-            input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
-            df = pd.read_csv(input_csv)
-            cids = set(common_cids_per_ds(df))
-            df["cid"] = pd.to_numeric(df["cid"], errors="coerce").astype("Int64")
-            df = df[df["cid"].isin(cids)].reset_index(drop=True)
-            df = df.drop_duplicates(subset=["cid"]).reset_index(drop=True)
 
             write_final_csv_by_rowrep(
                 df_input=df,
