@@ -475,6 +475,6 @@ def compute_correlation(Xs_train, ys_train, Xs_test, ys_test, n_components=None,
         "p_value_mse": p_value_mse,                  # 1-D, length V
 })
 
-    return metrics_df
+    return metrics_df,preds_list
     
 

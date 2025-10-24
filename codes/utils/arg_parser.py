@@ -23,6 +23,7 @@ def create_behavior_parser(description='chem_exploration'):
     parser.add_argument('--n_fold', type=int, required=True)
     parser.add_argument('--z_score', type=str, default="false")
     parser.add_argument("--run_id", default=os.environ.get("RUN_ID", "unknown"))
+    parser.add_argument('embed_type', type=str, choices=['can', 'iso'], required=True, help="Type of embeddings: 'can' for canonical, 'iso' for isomeric")
     
     # fMRI-specific arguments
     

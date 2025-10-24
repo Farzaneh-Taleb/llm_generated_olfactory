@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import numpy as np
 import random
-import torch
 from .config import SEED, BASE_DIR
 def common_cids_per_ds(df):
     """
@@ -15,6 +14,7 @@ def common_cids_per_ds(df):
     cid_sets = []
     cid_col ="cid"
     pid_col = "participant_id"
+    
     df = df[[pid_col, cid_col]]
     for _, g in df.groupby("participant_id"):
         cids=set(g["cid"].tolist())
@@ -46,16 +46,7 @@ def set_seeds(seed=SEED):
     # Set seed for NumPy
     np.random.seed(seed)
 
-    # Set seed for PyTorch
-    torch.manual_seed(seed)
 
-    # If using GPUs, set seed for CUDA operations
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # For multi-GPU setups
-
-    # Configure cuDNN for deterministic behavior
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 def load_model_embeddings(ds, model_name, cids, layer, embed_type):
     """
     Load embeddings for a given dataset/model, filtered by layer and (optionally) a CID list.
@@ -122,7 +113,18 @@ def load_behavior_embeddings(ds,cids,participant_id, embed_cols, group_by_cid=Tr
     """
     # --- Load CSV as DataFrame ---
     df_behavior = pd.read_csv(f"{BASE_DIR}/DATASETS/datasets/{ds}/{ds}_data.csv")
+    #convert participant_id to int in daaframe
+    df_behavior['participant_id'] = df_behavior['participant_id'].astype(int)
+    df_behavior["cid"] = pd.to_numeric(df_behavior["cid"], errors="coerce")
+
+
+    if 'concentration' in df_behavior.columns:
+        df_behavior['concentration'] = df_behavior['concentration'].astype(float)
+        df_behavior = df_behavior[df_behavior['concentration']==0.001].copy()
     df_behavior = df_behavior[df_behavior["participant_id"] == participant_id].copy()
+    
+
+    print(f"Total rows for participant {participant_id}: {len(df_behavior)}", flush=True)
 
     # --- Sort by cid first ---
     df_behavior = df_behavior.sort_values(by="cid").reset_index(drop=True)
@@ -134,14 +136,16 @@ def load_behavior_embeddings(ds,cids,participant_id, embed_cols, group_by_cid=Tr
 
     # --- Decide which embedding columns to use ---
     
-   
+    print(f"Total rows for participant cid {participant_id}: {len(df_behavior)}", flush=True)
 
     # --- Optional: group by cid (mean across duplicates within this subject) ---
     if group_by_cid:
         # Keep only the needed columns for aggregation: cid + embeddings
         agg_df = df_behavior[["cid"] + embed_cols].groupby("cid", as_index=False).mean(numeric_only=True)
         # After grouping, drop 'cid' before converting to numpy
-        behavior = agg_df[embed_cols].to_numpy()
+        behavior = agg_df[embed_cols].fillna(0).to_numpy()
+        print(f"Total rows for participant cid {participant_id}, after mean: {len(df_behavior)}", flush=True)
+
     else:
         # No grouping: just take embeddings in current row order
         behavior = df_behavior[embed_cols].to_numpy()
@@ -174,3 +178,96 @@ def load_fold_cids(n_fold,i_fold, ds):
     test_cids = fold_df[fold_df['set']=='test'][ "cid"].astype(int).tolist()
     
     return train_cids, test_cids
+
+
+
+def collect_predictions_rows(
+    preds_list,                        # List[np.ndarray] — one array per fold, in the same order as Xs_test
+    test_cids_list,                      # List[List[int]] — one list per fold, in the same order as Xs_test
+    descriptors,                         # List[str] == embed_cols
+    participant_id: int,
+    model_name: str,
+    ds: str,
+    layer: int,
+    n_fold: int,
+    n_components: int | None,
+    z_score: bool,
+    run_id: str,
+    # input_type_col: str = "isomericsmiles",   # to mirror your GPT CSV columns
+    # smiles_lookup: dict[int, str] | None = None,  # optional {cid -> smiles}
+    # name_lookup: dict[int, str] | None = None,    # optional {cid -> odor name}
+) -> pd.DataFrame:
+    """
+    Returns a dataframe with columns mirroring your GPT batch output:
+    [participant_id, cid, repeat, temperature, isomericsmiles, name, model_name, build_prompt_type, ...descriptors]
+    """
+    rows = []
+    
+    # Run the same pipeline used in compute_correlation
+    
+    # Build rows for each test sample
+    for i, cid in enumerate(test_cids_list):
+        base = {
+            "participant_id": participant_id,
+            "cid": int(cid) if cid is not None else None,
+            "repeat": 0,                         # to mirror GPT format (no repeats here)
+            # "temperature": "",                   # N/A for regression
+            # input_type_col: smiles_lookup.get(int(cid), "") if (smiles_lookup and cid is not None) else "",
+            # "name": name_lookup.get(int(cid), "") if (name_lookup and cid is not None) else "",
+            "model_name": model_name,
+            "build_prompt_type": "regression",   # tag to distinguish from "bysmiles"/"byname"
+            "ds": ds,
+            "layer": layer,
+            "n_fold": n_fold,
+            "n_components": n_components if n_components is not None else "",
+            "z_score": bool(z_score)
+           
+        }
+        # Attach descriptor predictions
+        for j, d in enumerate(descriptors):
+            base[d] = float(preds_list[i, j])
+        rows.append(base)
+
+    # Order columns similar to your GPT CSVs (then add metadata)
+    front_cols = [
+        "participant_id", "cid", "repeat", "model_name", "build_prompt_type"
+    ]
+    meta_cols = ["ds", "layer", "n_fold", "n_components", "z_score"]
+    cols = front_cols + descriptors + meta_cols
+
+    df = pd.DataFrame(rows)
+    # Only keep columns that exist
+    df = df.reindex(columns=[c for c in cols if c in df.columns])
+    return df
+
+
+def get_descriptors(ds):
+    if ds =='bierling2025':
+        return ['intensity','pleasantness','familiar','edible', 'warm','sour', 'cold','sweet','fruit','spices','bakery','garlic', 'fish', 
+                    'burnt', 'decayed', 'grass', 'wood', 'chemical','flower', 'musky', 'sweaty', 'ammonia']
+    elif ds == 'keller2016':
+        return['intensity', 'pleasantness','familiarity','edible','bakery','sweet','fruit','fish','garlic','spices','cold','sour',
+               'burnt','acid','warm','musky','sweaty','ammonia','decayed','wood','grass','flower','chemical']
+    elif ds== 'sagar2023_v1':
+        pass
+    elif ds == 'sagar2023_v2':
+        pass
+    elif ds == 'sagar2023':
+        return [ 'intensity', 'pleasantness', 'fishy', 'burnt', 'sour', 'decayed', 'musky',
+    'fruity', 'sweaty', 'cool', 'floral', 'sweet', 'warm', 'bakery', 'spicy']
+    elif ds == 'leffingwell':
+        return [
+                "alcoholic","aldehydic","alliaceous","almond","animal","anisic","apple","apricot","aromatic","balsamic",
+                "banana","beefy","berry","black currant","brandy","bread","brothy","burnt","buttery","cabbage","camphoreous",
+                "caramellic","catty","chamomile","cheesy","cherry","chicken","chocolate","cinnamon","citrus","cocoa","coconut",
+                "coffee","cognac","coumarinic","creamy","cucumber","dairy","dry","earthy","ethereal","fatty","fermented","fishy",
+                "floral","fresh","fruity","garlic","gasoline","grape","grapefruit","grassy","green","hay","hazelnut","herbal",
+                "honey","horseradish","jasmine","ketonic","leafy","leathery","lemon","malty","meaty","medicinal","melon","metallic",
+                "milky","mint","mushroom","musk","musty","nutty","odorless","oily","onion","orange","orris","peach","pear",
+                "phenolic","pine","pineapple","plum","popcorn","potato","pungent","radish","ripe","roasted","rose","rum","savory",
+                "sharp","smoky","solvent","sour","spicy","strawberry","sulfurous","sweet","tea","tobacco","tomato","tropical",
+                "vanilla","vegetable","violet","warm","waxy","winey","woody"]
+    else:
+        raise ValueError("Unsupported dataset: {}".format(ds))
+    
+    

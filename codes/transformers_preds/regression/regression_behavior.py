@@ -31,7 +31,7 @@ def main():
     out_dir = args.out_dir
     z_score = args.z_score
     ds= args.ds
-    embed_type='can'
+    embed_type=args.embed_type
     embed_cols = args.behavior_embeddings or get_descriptors(ds)
     run_id=args.run_id
 
@@ -45,6 +45,7 @@ def main():
         train_behaviors=[]
         test_embeddings=[]
         test_behaviors=[]
+        test_cids_folds = []
         for i_fold in range(n_fold):
             print(i_fold,layer)
             
@@ -61,6 +62,7 @@ def main():
             test_embeddings.append(test_embedding)
             train_behaviors.append(train_behavior)
             test_behaviors.append(test_behavior)
+            test_cids_folds.append(list(test_cids))  
 
             # Prepare data for all folds
        
@@ -72,8 +74,8 @@ def main():
 
         
         # Compute correlations
-        metrics = compute_correlation(
-            train_embeddings, train_behaviors, test_embeddings, test_behaviors, 
+        metrics,preds_list = compute_correlation(
+            train_embeddings, train_behaviors, test_embeddings, test_behaviors, test_cids_folds,
          n_components=n_components,z_score=z_score
         )
         metrics = metrics.assign(
@@ -94,6 +96,29 @@ def main():
         print("****")
 
 
+
+        # ---- PREDICTIONS (LLM-like CSV) ----
+        preds_df = collect_predictions_rows(preds_list,
+            test_cids_list=test_cids_folds,
+            descriptors=embed_cols,
+            participant_id=participant_id,
+            model_name=model_name,
+            ds=ds,
+            layer=layer,
+            n_fold=n_fold,
+            n_components=n_components,
+            z_score=z_score,
+            run_id=os.environ.get("RUN_ID", "UNKNOWN"),
+            # input_type_col="isomericsmiles",
+            # smiles_lookup=smiles_lookup,
+            # name_lookup=name_lookup,
+        )
+
+            # Save alongside your LLM outputs, with a clear name
+        out_preds = Path(BASE_DIR) / "transformer_responses" / f"{ds}_odor_regression_scores_model-{model_name}_layer-{layer}_nfold-{n_fold}_ncomp-{n_components}_z-{int(bool(z_score))}.csv"
+        out_preds.parent.mkdir(parents=True, exist_ok=True)
+        preds_df.to_csv(out_preds, index=False)
+        print(f"Saved predictions: {out_preds}")
 if __name__ == "__main__":
     main()
 
