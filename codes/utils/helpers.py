@@ -2,7 +2,10 @@ import os
 import pandas as pd
 import numpy as np
 import random
-from .config import SEED, BASE_DIR
+from .config import *
+from typing import List, Dict, Any, Optional, Tuple, Union
+import time
+import json 
 def common_cids_per_ds(df):
     """
     Return a sorted list of CIDs that appear in ALL subjects for this dataset (ds).
@@ -271,3 +274,486 @@ def get_descriptors(ds):
         raise ValueError("Unsupported dataset: {}".format(ds))
     
     
+
+def get_rate_range(ds: str) -> tuple[float, float]:
+    if ds not in RATE_RANGE:
+        raise ValueError(f"Unknown dataset: {ds}. Please add it to RATE_RANGE.")
+    return RATE_RANGE[ds]
+
+# -------- Registry I/O (unchanged) --------
+def log_batch_entry(
+    ds: str,
+    model_name: str,
+    temp: float,
+    batch_id: str,
+    build_prompt_type: str,
+    n_repeats: int,
+):
+    os.makedirs(os.path.dirname(BATCH_REGISTRY), exist_ok=True)
+    entry = {
+        "ds": ds,
+        "model_name": model_name,
+        "temperature": temp,
+        "batch_id": batch_id,  # e.g., 'batches/123...'
+        "build_prompt_type": build_prompt_type,
+        "n_repeats": n_repeats,
+        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    with open(BATCH_REGISTRY, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def load_registry() -> List[Dict[str, Any]]:
+    if not os.path.exists(BATCH_REGISTRY):
+        return []
+    with open(BATCH_REGISTRY, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+def _clean_cell(x) -> str:
+    if x is None:
+        return ""
+    try:
+        import pandas as _pd
+        if _pd.isna(x):
+            return ""
+    except Exception:
+        pass
+    return str(x).strip()
+
+
+
+
+def pair_input_col(which: int, input_type: str) -> str:
+    assert which in (1, 2)
+    return f"{input_type} stimulus {which}"
+
+def is_pairwise_df(df: pd.DataFrame) -> bool:
+    """
+    Detect pairwise format by presence of either:
+      - CID columns for both stimuli, or
+      - Name columns for both stimuli, or
+      - Two input columns for the configured INPUT_TYPE,
+    and ideally a 'similarity' column.
+    """
+    has_pair_ids = (PAIR_CID1 in df.columns and PAIR_CID2 in df.columns)
+    has_pair_names = (PAIR_NAME1 in df.columns and PAIR_NAME2 in df.columns)
+    has_pair_inputs = (
+        pair_input_col(1, INPUT_TYPE) in df.columns and
+        pair_input_col(2, INPUT_TYPE) in df.columns
+    )
+    has_sim = PAIR_SIMILARITY in df.columns
+    # be permissive: if we have two inputs of either type, treat as pairwise
+    return (has_pair_inputs or has_pair_names or has_pair_ids) and has_sim
+
+def row_smiles(row: pd.Series) -> Optional[str]:
+    smi = _clean_cell(row.get(INPUT_TYPE, ""))
+    return smi or None
+
+def row_name(row: pd.Series) -> Optional[str]:
+    nm = _clean_cell(row.get("name", ""))
+    return nm or None
+
+def row_pair_inputs(row: pd.Series, build_prompt_type: str) -> Optional[Tuple[str, str]]:
+    """
+    Return (input1, input2) depending on build_prompt_type.
+    - bysmiles -> use f"{INPUT_TYPE} stimulus 1/2"
+    - byname   -> use "name stimulus 1/2"
+    """
+    if build_prompt_type == "bysmiles":
+        col1 = pair_input_col(1, INPUT_TYPE)
+        col2 = pair_input_col(2, INPUT_TYPE)
+    else:
+        col1 = PAIR_NAME1
+        col2 = PAIR_NAME2
+    a = _clean_cell(row.get(col1, ""))
+    b = _clean_cell(row.get(col2, ""))
+    if not a or not b:
+        return None
+    return a, b
+
+
+def row_pair_cids(row: pd.Series) -> Tuple[Optional[int], Optional[int]]:
+    c1 = pd.to_numeric(row.get(PAIR_CID1), errors="coerce")
+    c2 = pd.to_numeric(row.get(PAIR_CID2), errors="coerce")
+    c1 = int(c1) if pd.notna(c1) else None
+    c2 = int(c2) if pd.notna(c2) else None
+    return c1, c2
+
+
+# def build_prompt_bysmiles_single(
+#     smiles: str,
+#     descriptors: List[str],
+#     rate_min: float,
+#     rate_max: float,
+#     include_confidence: bool = False,
+# ) -> str:
+#     desc_list = ", ".join([f'"{d}"' for d in descriptors])
+#     json_lines = [f'  "{d}": <{rate_min}-{rate_max}>' for d in descriptors]
+#     if include_confidence:
+#         json_lines.append('  "confidence": <0-1>')
+#     json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+
+#     return f"""Molecule:
+# - ISOMERIC SMILES: {smiles}
+
+# Descriptors (rate each from {rate_min} to {rate_max}): [{desc_list}]
+
+# Output rules:
+# - Return ONLY a single valid JSON object. No prose, no markdown.
+# - Keys must match the descriptor list exactly.
+# - Values must be numbers in [{rate_min},{rate_max}].
+# - Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+# Output format:
+# {json_block}
+# """
+
+
+def build_prompt_bysmiles_single(
+    smiles: str,
+    descriptors: List[str],
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool = False,
+) -> str:
+    desc_list = ", ".join([f'"{d}"' for d in descriptors])
+    json_lines = [f'  "{d}": <{rate_min}-{rate_max}>' for d in descriptors]
+    if include_confidence:
+        json_lines.append('  "confidence": <0-1>')
+    json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+
+    return f"""Instructions:
+    You will be presented with an odor stimulus.
+    Please rate the smell of the stimulus on each perceptual dimension listed below.
+- Stimulus: {smiles}
+
+Perceptual dimensions (rate each from {rate_min} to {rate_max}): [{desc_list}]
+
+Output rules:
+- Return ONLY a single valid JSON object. No prose, no markdown.
+- Keys must match the descriptor list exactly.
+- Values must be numbers in [{rate_min},{rate_max}].
+- Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+Output format:
+{json_block}
+"""
+
+# ---------- Prompt builders (single-item) ----------
+# def build_prompt_byname_single(
+#     name: str,
+#     descriptors: List[str],
+#     rate_min: float,
+#     rate_max: float,
+#     include_confidence: bool = False,
+# ) -> str:
+#     desc_list = ", ".join([f'"{d}"' for d in descriptors])
+#     json_lines = [f'  "{d}": <{rate_min}-{rate_max}>' for d in descriptors]
+#     if include_confidence:
+#         json_lines.append('  "confidence": <0-1>')
+#     json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+
+#     return f"""Molecule:
+# - Name: {name}
+
+# Descriptors (rate each from {rate_min} to {rate_max}): [{desc_list}]
+
+# Output rules:
+# - Return ONLY a single valid JSON object. No prose, no markdown.
+# - Keys must match the descriptor list exactly.
+# - Values must be numbers in [{rate_min},{rate_max}].
+# - Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+# Output format:
+# {json_block}
+# """
+
+
+def build_prompt_byname_single(
+    name: str,
+    descriptors: List[str],
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool = False,
+) -> str:
+    desc_list = ", ".join([f'"{d}"' for d in descriptors])
+    json_lines = [f'  "{d}": <{rate_min}-{rate_max}>' for d in descriptors]
+    if include_confidence:
+        json_lines.append('  "confidence": <0-1>')
+    json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+
+    return f"""Instructions:
+    You will be presented with an odor stimulus.
+    Please rate the smell of the stimulus on each perceptual dimension listed below.
+- Stimulus: {name}
+
+Perceptual dimensions (rate each from {rate_min} to {rate_max}): [{desc_list}]
+
+Output rules:
+- Return ONLY a single valid JSON object. No prose, no markdown.
+- Keys must match the descriptor list exactly.
+- Values must be numbers in [{rate_min},{rate_max}].
+- Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+Output format:
+{json_block}
+"""
+
+
+# def build_prompt_bysmiles_pairwise(
+#     smiles_1: str,
+#     smiles_2: str,
+#     rate_min: float,
+#     rate_max: float,
+#     include_confidence: bool = False,
+# ) -> str:
+#     json_lines = [f'  "similarity": <{rate_min}-{rate_max}>']
+#     if include_confidence:
+#         json_lines.append('  "confidence": <0-1>')
+#     json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+#     return f"""Two Molecules:
+# - ISOMERIC SMILES (Stimulus 1): {smiles_1}
+# - ISOMERIC SMILES (Stimulus 2): {smiles_2}
+
+# Similarity (rate from {rate_min} to {rate_max}):
+# - Provide a single continuous similarity rating; higher means more similar.
+
+# Output rules:
+# - Return ONLY a single valid JSON object. No prose, no markdown.
+# - Keys must be exactly: "similarity".
+# - Values must be numbers in [{rate_min},{rate_max}]{' (and confidence in [0,1])' if include_confidence else ''}.
+# - Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+# Output format:
+# {json_block}
+# """
+
+# def build_prompt_byname_pairwise(
+#     name_1: str,
+#     name_2: str,
+#     rate_min: float,
+#     rate_max: float,
+#     include_confidence: bool = False,
+# ) -> str:
+#     """
+#     Name-based similarity prompt with the same structure as the single-item name prompt.
+#     """
+#     json_lines = [f'  "similarity": <{rate_min}-{rate_max}>']
+#     if include_confidence:
+#         json_lines.append('  "confidence": <0-1>')
+#     json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+
+#     return f"""Two Molecules:
+# - Name (Stimulus 1): {name_1}
+# - Name (Stimulus 2): {name_2}
+
+# Similarity (rate from {rate_min} to {rate_max}):
+# - Provide a single continuous similarity rating; higher means more similar.
+
+# Output rules:
+# - Return ONLY a single valid JSON object. No prose, no markdown.
+# - Keys must be exactly: "similarity".
+# - Values must be numbers in [{rate_min},{rate_max}]{' (and confidence in [0,1])' if include_confidence else ''}.
+# - Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+# Output format:
+# {json_block}
+# """
+
+
+def build_prompt_bysmiles_pairwise(
+    smiles_1: str,
+    smiles_2: str,
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool = False,
+) -> str:
+    json_lines = [f'  "similarity": <{rate_min}-{rate_max}>']
+    if include_confidence:
+        json_lines.append('  "confidence": <0-1>')
+    json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+    return f"""Instructions:
+    You will be presented with two odor stimuli.
+    Please rate the similarity between the smell of the two stimuli:
+- Stimulus 1: {smiles_1}
+- Stimulus 2: {smiles_2}
+
+Similarity (rate from {rate_min} to {rate_max}):
+- Provide a single continuous similarity rating; higher means more similar.
+
+Output rules:
+- Return ONLY a single valid JSON object. No prose, no markdown.
+- Keys must be exactly: "similarity".
+- Values must be numbers in [{rate_min},{rate_max}]{' (and confidence in [0,1])' if include_confidence else ''}.
+- Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+Output format:
+{json_block}
+"""
+
+def build_prompt_byname_pairwise(
+    name_1: str,
+    name_2: str,
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool = False,
+) -> str:
+    """
+    Name-based similarity prompt with the same structure as the single-item name prompt.
+    """
+    json_lines = [f'  "similarity": <{rate_min}-{rate_max}>']
+    if include_confidence:
+        json_lines.append('  "confidence": <0-1>')
+    json_block = "{\n" + ",\n".join(json_lines) + "\n}"
+
+    return f"""Instructions:
+    You will be presented with two odor stimuli.
+    Please rate the similarity between the smell of the two stimuli:
+- Stimulus 1: {name_1}
+- Stimulus 2: {name_2}
+
+Similarity (rate from {rate_min} to {rate_max}):
+- Provide a single continuous similarity rating; higher means more similar.
+
+Output rules:
+- Return ONLY a single valid JSON object. No prose, no markdown.
+- Keys must be exactly: "similarity".
+- Values must be numbers in [{rate_min},{rate_max}]{' (and confidence in [0,1])' if include_confidence else ''}.
+- Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
+
+Output format:
+{json_block}
+"""
+
+
+
+def build_prompt_bysmiles(
+    x: Union[str, Tuple[str, str]],
+    descriptors: List[str],
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool = False,
+    *,
+    pairwise: bool = False,
+) -> str:
+    """
+    Unified API compatible with previous code paths.
+    - For single-item: x is a SMILES string.
+    - For pairwise: x is a tuple (stimulus_1, stimulus_2), SMILES strings.
+    """
+    if pairwise:
+        if not (isinstance(x, tuple) and len(x) == 2):
+            raise ValueError("For pairwise=True, pass a tuple (stimulus_1, stimulus_2).")
+        a, b = x
+        return build_prompt_bysmiles_pairwise(a, b, rate_min, rate_max, include_confidence)
+    # single-item
+    if isinstance(x, tuple):
+        raise ValueError("For single-item prompts, pass a single SMILES string, not a tuple.")
+    return build_prompt_bysmiles_single(x, descriptors, rate_min, rate_max, include_confidence)
+
+def build_prompt_byname(
+    x: Union[str, Tuple[str, str]],
+    descriptors: List[str],
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool = False,
+    *,
+    pairwise: bool = False,
+) -> str:
+    """
+    Unified API compatible with previous code paths.
+    - For single-item: x is a name string.
+    - For pairwise: x is a tuple (stimulus_1, stimulus_2), names.
+    """
+    if pairwise:
+        if not (isinstance(x, tuple) and len(x) == 2):
+            raise ValueError("For pairwise=True, pass a tuple (stimulus_1, stimulus_2).")
+        a, b = x
+        return build_prompt_byname_pairwise(a, b, rate_min, rate_max, include_confidence)
+    # single-item
+    if isinstance(x, tuple):
+        raise ValueError("For single-item prompts, pass a single name string, not a tuple.")
+    return build_prompt_byname_single(x, descriptors, rate_min, rate_max, include_confidence)
+
+def validate_response_single(
+    resp_text: str,
+    descriptors: List[str],
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool,
+) -> Dict[str, float]:
+    obj = json.loads(resp_text)
+    out: Dict[str, float] = {}
+    for d in descriptors:
+        if d not in obj:
+            raise ValueError(f"Missing key: {d}")
+        try:
+            v = float(obj[d])
+        except Exception:
+            raise ValueError(f"Non-numeric value for '{d}': {obj[d]!r}")
+        out[d] = max(rate_min, min(rate_max, v))
+    if include_confidence:
+        if "confidence" in obj:
+            try:
+                c = float(obj["confidence"])
+            except Exception:
+                c = 0.0
+            out["confidence"] = max(0.0, min(1.0, c))
+        else:
+            out["confidence"] = None
+    return out
+
+
+def validate_response_pairwise(
+    resp_text: str,
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool,
+) -> Dict[str, float]:
+    obj = json.loads(resp_text)
+    if "similarity" not in obj:
+        raise ValueError('Missing key: "similarity"')
+    try:
+        sim = float(obj["similarity"])
+    except Exception:
+        raise ValueError(f"Non-numeric value for 'similarity': {obj.get('similarity')!r}")
+    out: Dict[str, float] = {"similarity": max(rate_min, min(rate_max, sim))}
+    if include_confidence:
+        if "confidence" in obj:
+            try:
+                c = float(obj["confidence"])
+            except Exception:
+                c = 0.0
+            out["confidence"] = max(0.0, min(1.0, c))
+        else:
+            out["confidence"] = None
+    return out
+
+
+def build_prompt_dispatch(
+    x: Union[str, Tuple[str, str]],
+    descriptors: List[str],
+    rate_min: float,
+    rate_max: float,
+    include_confidence: bool = False,
+    *,
+    pairwise: bool = False,
+    byname: bool = False,
+) -> str:
+    if pairwise:
+        if not (isinstance(x, tuple) and len(x) == 2):
+            raise ValueError("For pairwise=True, pass a tuple (stimulus_1, stimulus_2).")
+        a, b = x
+        return (
+            build_prompt_byname_pairwise(a, b, rate_min, rate_max, include_confidence)
+            if byname
+            else build_prompt_bysmiles_pairwise(a, b, rate_min, rate_max, include_confidence)
+        )
+    else:
+        if isinstance(x, tuple):
+            raise ValueError("For single-item prompts, pass a single string (SMILES or name).")
+        return (
+            build_prompt_byname_single(x, descriptors, rate_min, rate_max, include_confidence)
+            if byname
+            else build_prompt_bysmiles_single(x, descriptors, rate_min, rate_max, include_confidence)
+        )

@@ -110,7 +110,7 @@ def parse_tr_meta(path: str) -> Dict[str, str]:
 # Oct34_transformer_responses
 #keller2016_odor_regression_scores_model-*_layer-*_nfold-*_ncomp-*_z-*.csv" 
 def load_human(ds: str) -> pd.DataFrame:
-    human_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+    human_csv = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
     df = pd.read_csv(human_csv)
     # df = _standardize_descriptor_columns(df, source="human")
     df["cid"]=pd.to_numeric(df["cid"], errors="coerce")
@@ -592,7 +592,7 @@ def main():
 )
 
     args = p.parse_args()
-    tr_metrics_glob = f"{BASE_DIR}/llm_responses/metrics_model-*_ds-{args.ds}*.csv" 
+    tr_metrics_glob = f"{BASE_DIR}/results/responses/llm_responses/metrics_model-*_ds-{args.ds}*.csv" 
 
     out_dir = f"{BASE_DIR}/correlation_reports/{args.ds}"
     out_dir = Path(out_dir)
@@ -609,7 +609,7 @@ def main():
     # print(human.head())
     # ---- LLM ingest ----
     llm_frames: List[pd.DataFrame] = []
-    llm_glob = f"{BASE_DIR}/llm_responses/{args.ds}_odor_llm_scores_*.csv"
+    llm_glob = f"{BASE_DIR}/results/responses/llm_responses/{args.ds}_odor_llm_scores_*.csv"
     for fp in glob.glob(llm_glob):
         try:
             llm_frames.append(load_llm_file(fp))

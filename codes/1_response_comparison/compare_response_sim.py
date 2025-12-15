@@ -66,7 +66,7 @@ def safe_pearson(x: pd.Series, y: pd.Series) -> Tuple[float,float,int]:
 # Loaders
 # ------------------------------
 def load_human_pairs(ds: str) -> pd.DataFrame:
-    fp = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+    fp = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
     print(f"[HUMAN] Loading {fp}")  
     df = pd.read_csv(fp)
     df = canonicalize_pairs(df)
@@ -75,7 +75,7 @@ def load_human_pairs(ds: str) -> pd.DataFrame:
 
 def load_llm_pairs_files(ds: str) -> pd.DataFrame:
     """Concatenate all LLM pair files for the dataset; attach parsed meta."""
-    glob_pat = f"{BASE_DIR}/llm_responses/{ds}_odor_llm_scores_*.csv"
+    glob_pat = f"{BASE_DIR}/results/responses/llm_responses/{ds}_odor_llm_scores_*.csv"
     frames = []
     for fp in glob.glob(glob_pat):
         try:

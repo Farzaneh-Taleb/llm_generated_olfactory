@@ -107,7 +107,7 @@ def parse_tr_meta(path: str) -> Dict[str, str]:
 # Loading / Preprocessing
 # ------------------------------
 def load_human(ds: str) -> pd.DataFrame:
-    human_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+    human_csv = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
     df = pd.read_csv(human_csv)
     df["cid"] = pd.to_numeric(df["cid"], errors="coerce")
     df["participant_id"] = pd.to_numeric(df["participant_id"], errors="coerce")
@@ -271,7 +271,7 @@ def main():
     human = human[human["participant_id"] == -1]
 
     # LLM
-    llm_frames = [load_llm_file(fp) for fp in glob.glob(f"{BASE_DIR}/llm_responses/{args.ds}_odor_llm_scores_*.csv")]
+    llm_frames = [load_llm_file(fp) for fp in glob.glob(f"{BASE_DIR}/results/responses/llm_responses/{args.ds}_odor_llm_scores_*.csv")]
     llm = pd.concat(llm_frames, ignore_index=True) if llm_frames else None
     print(f"Loaded LLM data: {llm.shape[0]} rows from {len(llm_frames)} files.")
     if llm is not None and not llm.empty:

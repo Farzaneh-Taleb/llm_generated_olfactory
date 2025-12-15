@@ -115,7 +115,7 @@ def main():
         )
 
             # Save alongside your LLM outputs, with a clear name
-        out_preds = Path(BASE_DIR) / "transformer_responses" / f"{ds}_odor_regression_scores_model-{model_name}_layer-{layer}_nfold-{n_fold}_ncomp-{n_components}_z-{int(bool(z_score))}.csv"
+        out_preds = Path(BASE_DIR) /"results"/"responses"/ "transformer_responses" / f"{ds}_odor_regression_scores_model-{model_name}_layer-{layer}_nfold-{n_fold}_ncomp-{n_components}_z-{int(bool(z_score))}.csv"
         out_preds.parent.mkdir(parents=True, exist_ok=True)
         preds_df.to_csv(out_preds, index=False)
         print(f"Saved predictions: {out_preds}")

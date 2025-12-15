@@ -8,83 +8,23 @@ import pandas as pd
 from google import genai
 from google.genai import types
 
-from utils.helpers import common_cids_per_ds
+from utils.helpers import *
 from utils.ds_utils import get_descriptors2 as get_descriptors
-from utils.config import BASE_DIR
-
+from utils.config import *
 # ---------------- Config ----------------
 # ---------------- Config ----------------
-RATE_RANGE = {
-    "keller2016": (0.0, 100.0),
-    "sagar2023": (-1,1),
-    "leffingwell": (0.0, 1.0),
-    "ravia": (0.0, 1.0),
-    "snitz": (0.0, 1.0),
-    # Add others as needed
-}
-# global RATE_MIN, RATE_MAX
 
-def get_rate_range(ds: str) -> tuple[float, float]:
-    """Return (RATE_MIN, RATE_MAX) for the given dataset."""
-    if ds not in RATE_RANGE:
-        raise ValueError(f"Unknown dataset: {ds}. Please add it to RATE_RANGE.")
-    return RATE_RANGE[ds]
 
-# Example usage
-# ds = "leffingwell"
 
-INCLUDE_CONFIDENCE = False
-INPUT_TYPE = "isomericsmiles"         # 'isomericsmiles' or 'cid'
-SYSTEM_MSG = "You are an olfactory rater. Output ONLY valid JSON."
-BATCH_REGISTRY = f"{BASE_DIR}/llm_responses/batch_registry.jsonl"
-
-BUILD_PROMPT_CHOICES = ("bysmiles", "byname")
 
 # Gemini client (reads GEMINI_API_KEY from env)
 client = genai.Client()
 
-# -------- Registry I/O (unchanged) --------
-def log_batch_entry(ds, model_name, temp, batch_id, build_prompt_type, n_repeats):
-    os.makedirs(os.path.dirname(BATCH_REGISTRY), exist_ok=True)
-    entry = {
-        "ds": ds,
-        "model_name": model_name,
-        "temperature": temp,
-        "batch_id": batch_id,           # e.g. 'batches/123456...'
-        "build_prompt_type": build_prompt_type,
-        "n_repeats": n_repeats,
-        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    with open(BATCH_REGISTRY, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
-
-def load_registry() -> List[Dict[str, Any]]:
-    if not os.path.exists(BATCH_REGISTRY):
-        return []
-    with open(BATCH_REGISTRY, "r", encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
-
 # -------- Helpers (unchanged prompts) --------
-def _clean_cell(x) -> str:
-    if x is None:
-        return ""
-    try:
-        import pandas as _pd
-        if _pd.isna(x):
-            return ""
-    except Exception:
-        pass
-    return str(x).strip()
 
-def row_smiles(row: pd.Series) -> Optional[str]:
-    smi = _clean_cell(row.get(INPUT_TYPE, ""))
-    return smi or None
 
-def row_name(row: pd.Series) -> Optional[str]:
-    nm = _clean_cell(row.get("name", ""))
-    return nm or None
 
-def build_prompt(smiles: str, descriptors: List[str], rate_min: float, rate_max: float, include_confidence: bool=False) -> str:
+def build_prompt_bysmiles(smiles: str, descriptors: List[str], rate_min: float, rate_max: float, include_confidence: bool=False) -> str:
     desc_list = ", ".join([f'"{d}"' for d in descriptors])
     return f"""Molecule:
 - ISOMERIC SMILES: {smiles}
@@ -179,7 +119,7 @@ def make_jsonl_for_batch(
                 smi = row_smiles(r)
                 if not smi:
                     continue
-                prompt = build_prompt(smi, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
+                prompt = build_prompt_bysmiles(smi, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
             else:
                 nm = row_name(r)
                 if not nm:
@@ -373,7 +313,7 @@ def main():
     if args.cmd == "submit":
         ds = args.ds
         RATE_MIN, RATE_MAX = get_rate_range(ds)
-        input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+        input_csv = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
         df = pd.read_csv(input_csv)
         df["cid"] = pd.to_numeric(df["cid"], errors="coerce")
         if "concentration" in df.columns and "keller" in ds.lower():
@@ -389,7 +329,7 @@ def main():
         n_repeats = int(args.n_repeats)
         descriptors = get_descriptors(ds)
 
-        jsonl_path = f"tmp/{ds}_{model_name}_{args.temperature}_{build_prompt_type}_reps-{n_repeats}.jsonl"
+        jsonl_path = f"/results/responses/tmp/{ds}_{model_name}_{args.temperature}_{build_prompt_type}_reps-{n_repeats}.jsonl"
         total, used_reqs = make_jsonl_for_batch(
             df=df,
             ds_name=ds,
@@ -411,7 +351,7 @@ def main():
         for entry in reg:
             ds = entry["ds"]
             RATE_MIN, RATE_MAX = get_rate_range(ds)
-            input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+            input_csv = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
             df = pd.read_csv(input_csv)
             df["cid"] = pd.to_numeric(df["cid"], errors="coerce")
             if "concentration" in df.columns and "keller" in ds.lower():
@@ -438,7 +378,7 @@ def main():
 
             rowrep_to_scores = parse_batch_jsonl(paths, descriptors,RATE_MIN, RATE_MAX)
             output_csv = (
-                f"{BASE_DIR}/llm_responses/"
+                f"{BASE_DIR}/results/responses/llm_responses/"
                 f"{ds}_odor_llm_scores_temp-{temp}_model-{model_name}_bpt-{build_prompt_type}_reps-{n_repeats}.csv"
             )
             write_final_csv_by_rowrep(

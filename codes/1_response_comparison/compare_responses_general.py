@@ -912,7 +912,7 @@ def main():
         human = human[human["participant_id"] == -1]
 
         # ---- LLM ingest ----
-        llm_glob = f"{BASE_DIR}/llm_responses/{ds}_odor_llm_scores_*.csv"
+        llm_glob = f"{BASE_DIR}/results/responses/llm_responses/{ds}_odor_llm_scores_*.csv"
         llm_frames: List[pd.DataFrame] = []
         for fp in glob.glob(llm_glob):
             try:
@@ -979,7 +979,7 @@ def main():
                 tr_desc_stats.to_csv(out_dir / "tr_mean_sem_over_descriptors.csv", index=False)
 
         else:  # metrics path (kept for completeness; not used for ROC)
-            trm = load_transformer_metrics_files(ds, descriptors, metrics_glob=f"{BASE_DIR}/llm_responses/metrics_model-*_ds-{ds}*.csv")
+            trm = load_transformer_metrics_files(ds, descriptors, metrics_glob=f"{BASE_DIR}/results/responses/llm_responses/metrics_model-*_ds-{ds}*.csv")
             if trm is None or trm.empty:
                 print("[TR-METRICS] No metrics rows found.")
             else:

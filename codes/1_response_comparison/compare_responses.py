@@ -13,9 +13,9 @@ model = "gemini-flash-lite-latest"
 temp = 0.0
 
 # ---------------- I/O ----------------
-llm_bysmiles_path = f"{BASE_DIR}/llm_responses/{ds}_odor_llm_scores_temp-{temp}_model-{model}_bpt-bysmiles.csv"
-llm_byname_path   = f"{BASE_DIR}/llm_responses/{ds}_odor_llm_scores_temp-{temp}_model-{model}_bpt-byname.csv"
-human_path        = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+llm_bysmiles_path = f"{BASE_DIR}/results/responses/llm_responses/{ds}_odor_llm_scores_temp-{temp}_model-{model}_bpt-bysmiles.csv"
+llm_byname_path   = f"{BASE_DIR}/results/responses/llm_responses/{ds}_odor_llm_scores_temp-{temp}_model-{model}_bpt-byname.csv"
+human_path        = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
 
 llm_bysmiles = pd.read_csv(llm_bysmiles_path)
 llm_byname   = pd.read_csv(llm_byname_path)

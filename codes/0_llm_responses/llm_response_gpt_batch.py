@@ -5,162 +5,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 from openai import OpenAI
 
-from utils.helpers import common_cids_per_ds
+from utils.helpers import *
 from utils.ds_utils import get_descriptors2 as get_descriptors
-from utils.config import BASE_DIR
+from utils.config import *
 
-# ---------------- Config ----------------
-INCLUDE_CONFIDENCE = False
-INPUT_TYPE = "isomericsmiles"         # 'isomericsmiles' or 'cid'
-SYSTEM_MSG = "You are an olfactory rater. Output ONLY valid JSON."
-BATCH_REGISTRY = f"{BASE_DIR}/llm_responses/batch_registry.jsonl"
-# ---------------- Config ----------------
-RATE_RANGE = {
-    "keller2016": (0.0, 100.0),
-    "sagar2023": (-1,1),
-    "leffingwell": (0.0, 1.0),
-    "ravia": (0.0, 1.0),
-    "snitz": (0.0, 1.0),
-    # Add others as needed
-}
+# ---------------- Config ---------------
 # global RATE_MIN, RATE_MAX
-BUILD_PROMPT_CHOICES = ("bysmiles", "byname")
 
 client = OpenAI()  # uses OPENAI_API_KEY from env
-def get_rate_range(ds: str) -> tuple[float, float]:
-    """Return (RATE_MIN, RATE_MAX) for the given dataset."""
-    if ds not in RATE_RANGE:
-        raise ValueError(f"Unknown dataset: {ds}. Please add it to RATE_RANGE.")
-    return RATE_RANGE[ds]
+
 # -------- Registry I/O --------
-def log_batch_entry(
-    ds: str,
-    model_name: str,
-    temp: float,
-    batch_id: str,
-    build_prompt_type: str,
-    n_repeats: int,
-):
-    os.makedirs(os.path.dirname(BATCH_REGISTRY), exist_ok=True)
-    entry = {
-        "ds": ds,
-        "model_name": model_name,
-        "temperature": temp,
-        "batch_id": batch_id,
-        "build_prompt_type": build_prompt_type,
-        "n_repeats": n_repeats,
-        "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    with open(BATCH_REGISTRY, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
 
-def load_registry() -> List[Dict[str, Any]]:
-    if not os.path.exists(BATCH_REGISTRY):
-        return []
-    with open(BATCH_REGISTRY, "r", encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
-
-# -------- Helpers --------
-def _clean_cell(x) -> str:
-    if x is None:
-        return ""
-    try:
-        import pandas as _pd  # local to avoid accidental shadowing
-        if _pd.isna(x):
-            return ""
-    except Exception:
-        pass
-    return str(x).strip()
-
-def row_smiles(row: pd.Series) -> Optional[str]:
-    smi = _clean_cell(row.get(INPUT_TYPE, ""))
-    return smi or None
-
-def row_name(row: pd.Series) -> Optional[str]:
-    nm = _clean_cell(row.get("name", ""))
-    return nm or None
-
-def build_prompt(
-    smiles: str,
-    descriptors: List[str],
-    rate_min: float,
-    rate_max: float,
-    include_confidence: bool = False,
-) -> str:
-    desc_list = ", ".join([f'"{d}"' for d in descriptors])
-    json_lines = [f'  "{d}": <{rate_min}-{rate_max}>' for d in descriptors]
-    if include_confidence:
-        json_lines.append('  "confidence": <0-1>')
-    json_block = "{\n" + ",\n".join(json_lines) + "\n}"
-    return f"""Molecule:
-- ISOMERIC SMILES: {smiles}
-
-Descriptors (rate each from {rate_min} to {rate_max}): [{desc_list}]
-
-Output rules:
-- Return ONLY a single valid JSON object. No prose, no markdown.
-- Keys must match the descriptor list exactly.
-- Values must be numbers in [{rate_min},{rate_max}].
-- Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
-
-Output format:
-{json_block}
-"""
-
-def build_prompt_byname(
-    name: str,
-    descriptors: List[str],
-    rate_min: float,
-    rate_max: float,
-    include_confidence: bool = False,
-) -> str:
-    desc_list = ", ".join([f'"{d}"' for d in descriptors])
-    json_lines = [f'  "{d}": <{rate_min}-{rate_max}>' for d in descriptors]
-    if include_confidence:
-        json_lines.append('  "confidence": <0-1>')
-    json_block = "{\n" + ",\n".join(json_lines) + "\n}"
-    return f"""Molecule:
-- Name: {name}
-
-Descriptors (rate each from {rate_min} to {rate_max}): [{desc_list}]
-
-Output rules:
-- Return ONLY a single valid JSON object. No prose, no markdown.
-- Keys must match the descriptor list exactly.
-- Values must be numbers in [{rate_min},{rate_max}].
-- Do NOT add extra keys{' except "confidence"' if include_confidence else ''}.
-
-Output format:
-{json_block}
-"""
-
-def validate_response(
-    resp_text: str,
-    descriptors: List[str],
-    rate_min: float,
-    rate_max: float,
-    include_confidence: bool,
-) -> Dict[str, float]:
-    obj = json.loads(resp_text)
-    out: Dict[str, float] = {}
-    for d in descriptors:
-        if d not in obj:
-            raise ValueError(f"Missing key: {d}")
-        try:
-            v = float(obj[d])
-        except Exception:
-            raise ValueError(f"Non-numeric value for '{d}': {obj[d]!r}")
-        out[d] = max(rate_min, min(rate_max, v))
-    if include_confidence:
-        if "confidence" in obj:
-            try:
-                c = float(obj["confidence"])
-            except Exception:
-                c = 0.0
-            out["confidence"] = max(0.0, min(1.0, c))
-        else:
-            out["confidence"] = None
-    return out
 
 # ---------- BATCH: PREP & SUBMIT ----------
 def make_jsonl_for_batch(
@@ -199,12 +54,12 @@ def make_jsonl_for_batch(
                 smi = row_smiles(r)
                 if not smi:
                     continue
-                prompt = build_prompt(smi, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
+                prompt = build_prompt_bysmiles_single(smi, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
             else:
                 name = row_name(r)
                 if not name:
                     continue
-                prompt = build_prompt_byname(name, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
+                prompt = build_prompt_byname_single(name, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
 
             for rep in range(n_repeats):
                 line = {
@@ -344,7 +199,7 @@ def parse_chat_completion_jsonl_by_rowrep(
                     .get("content", "")
                 ) or ""
                 try:
-                    scores = validate_response(content, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
+                    scores = validate_response_single(content, descriptors, RATE_MIN, RATE_MAX, INCLUDE_CONFIDENCE)
                 except Exception as e:
                     scores = {"error": f"validate_error: {e}"}
 
@@ -419,7 +274,7 @@ def main():
     if args.cmd == "submit":
         ds = args.ds
         RATE_MIN, RATE_MAX = get_rate_range(ds)
-        input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+        input_csv = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
         df = pd.read_csv(input_csv)
         df["cid"] = pd.to_numeric(df["cid"], errors="coerce")
         # Optional concentration filter if present
@@ -440,7 +295,7 @@ def main():
 
         
 
-        jsonl_path = f"tmp/{ds}_{model_name}_{args.temperature}_{build_prompt_type}_reps-{n_repeats}.jsonl"
+        jsonl_path = f"{BASE_DIR}/results/responses/tmp/{ds}_{model_name}_{args.temperature}_{build_prompt_type}_reps-{n_repeats}.jsonl"
 
         total, used_reqs = make_jsonl_for_batch(
             df=df,
@@ -464,7 +319,7 @@ def main():
         for entry in reg:
             ds = entry["ds"]
             RATE_MIN, RATE_MAX = get_rate_range(ds)
-            input_csv = f"{BASE_DIR}/datasets/{ds}/{ds}_data.csv"
+            input_csv = f"{BASE_DIR}/data/datasets/{ds}/{ds}_data.csv"
             df = pd.read_csv(input_csv)
             df["cid"] = pd.to_numeric(df["cid"], errors="coerce")
             # Optional concentration filter if present
@@ -502,7 +357,7 @@ def main():
 
             rowrep_to_scores = parse_chat_completion_jsonl_by_rowrep(paths, descriptors, RATE_MIN=RATE_MIN, RATE_MAX=RATE_MAX)
             output_csv = (
-                f"{BASE_DIR}/llm_responses/"
+                f"{BASE_DIR}/results/responses/llm_responses/"
                 f"{ds}_odor_llm_scores_temp-{temp}_model-{model_name}_bpt-{build_prompt_type}_reps-{n_repeats}.csv"
             )
 

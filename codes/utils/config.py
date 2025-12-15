@@ -42,3 +42,61 @@ INPUT_TYPES_ISO = {m: ("isomericselfies" if m == "SELFormer" else "isomericsmile
 # def get_input_type(model_name: str) -> str:
 #     """Return the input type for a model (defaults to 'smiles' if unknown)."""
 #     return INPUT_TYPES.get(model_name, "smiles")
+SYSTEM_MSG = "Output ONLY valid JSON."
+INPUT_TYPE = "isomericsmiles"         # 'isomericsmiles' or 'cid'
+BATCH_REGISTRY = f"{BASE_DIR}/results/responses/llm_responses/batch_registry.jsonl"
+BATCH_REGISTRY = f"{BASE_DIR}/results/responses/llm_responses/batch_registry.jsonl"
+RATE_RANGE = {
+    "keller2016": (0.0, 100.0),
+    "sagar2023": (-1, 1),
+    "leffingwell": (0.0, 1.0),
+    "ravia": (0.0, 1.0),
+    "snitz2013": (0.0, 1.0),
+}
+# RATE_RANGE = {
+#     "keller2016": (0.0, 100.0),
+#     "sagar2023": (-1,1),
+#     "leffingwell": (0.0, 1.0),
+#     "ravia": (0.0, 1.0),
+#     "snitz": (0.0, 1.0),
+#     # Add others as needed
+# }
+# RATE_RANGE = {
+#     "keller2016": (0.0, 100.0),
+#     "sagar2023": (-1, 1),
+#     "leffingwell": (0.0, 1.0),
+#     "ravia": (0.0, 1.0),
+#     "snitz2013": (0.0, 1.0),
+# }
+
+
+# RATE_RANGE = {
+#     "keller2016": (0.0, 100.0),
+#     "sagar2023": (-1, 1),
+#     "leffingwell": (0.0, 1.0),
+#     "ravia": (0.0, 1.0),
+#     "snitz2013": (0.0, 1.0),
+# }
+
+
+# RATE_RANGE = {
+#     "keller2016": (0.0, 100.0),
+#     "sagar2023": (-1,1),
+#     "leffingwell": (0.0, 1.0),
+#     "ravia": (0.0, 1.0),
+#     "snitz": (0.0, 1.0),
+#     # Add others as needed
+# }
+
+BUILD_PROMPT_CHOICES = ("bysmiles", "byname")
+
+INCLUDE_CONFIDENCE = False
+
+
+
+# Pairwise column names
+PAIR_CID1 = "cid stimulus 1"
+PAIR_CID2 = "cid stimulus 2"
+PAIR_SIMILARITY = "similarity"   # human ref (not used in prompt)
+PAIR_NAME1 = "name stimulus 1"
+PAIR_NAME2 = "name stimulus 2"
