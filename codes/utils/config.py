@@ -7,8 +7,9 @@ import os
 
 # BASE_DIR = '/cfs/klemming/projects/supr/olfactory_alignment'
 BASE_DIR = '/Volumes/work/phd/llm_generated_olfactory'
+# BASE_DIR = '/proj/rep-learning-robotics/users/x_farzt/llm_generated_olfactory'
 
-PROJECT_DIR = os.path.join(BASE_DIR, 'codes')
+ROJECT_DIR = os.path.join(BASE_DIR, 'codes')
 
 SEED = 2024
 
@@ -23,11 +24,11 @@ MODELS = [
     'openpom', 'behavior', 'molecular_descriptors', 'ChemBERT_ChEMBL_pretrained',
     'ChemBERTa-zinc-base-v1', 'MoLFormer-XL-both-10pct', 'SELFormer',
     'smiles-gpt', 'decoder_BARTSmiles', 'encoder_BARTSmiles', 'molgpt',
-    'ChemGPT-4.7M', 'ChemGPT-19M', 'ChemGPT-1.2B'
+    'ChemGPT-4.7M', 'ChemGPT-19M', 'ChemGPT-1.2B', "OLMoE-1B-7B-0125-Instruct"
 ]
 
 # Layer endpoints for each model
-LAYERS_END = [1, 1, 1, 8, 6, 12, 12, 4, 12, 12, 12, 24, 24, 24]
+LAYERS_END = [1, 1, 1, 8, 6, 12, 12, 4, 12, 12, 12, 24, 24, 24,16]
 
 # ROI configurations  
 ROIS = ["PirF", "PirT", "AMY", "OFC"]
@@ -42,7 +43,9 @@ INPUT_TYPES_ISO = {m: ("isomericselfies" if m == "SELFormer" else "isomericsmile
 # def get_input_type(model_name: str) -> str:
 #     """Return the input type for a model (defaults to 'smiles' if unknown)."""
 #     return INPUT_TYPES.get(model_name, "smiles")
-SYSTEM_MSG = "Output ONLY valid JSON."
+SYSTEM_MSG_temp1 = "You are an olfactory rater. Output ONLY valid JSON."
+SYSTEM_MSG_temp2= "Output ONLY valid JSON."
+
 INPUT_TYPE = "isomericsmiles"         # 'isomericsmiles' or 'cid'
 BATCH_REGISTRY = f"{BASE_DIR}/results/responses/llm_responses/batch_registry.jsonl"
 BATCH_REGISTRY = f"{BASE_DIR}/results/responses/llm_responses/batch_registry.jsonl"
@@ -88,7 +91,7 @@ RATE_RANGE = {
 #     # Add others as needed
 # }
 
-BUILD_PROMPT_CHOICES = ("bysmiles", "byname")
+BUILD_PROMPT_CHOICES = ("bysmiles", "byname","bycid")
 
 INCLUDE_CONFIDENCE = False
 
