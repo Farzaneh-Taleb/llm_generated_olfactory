@@ -6,8 +6,8 @@ Contains common constants and settings used across the project.
 import os
 
 # BASE_DIR = '/cfs/klemming/projects/supr/olfactory_alignment'
-BASE_DIR = '/Volumes/work/phd/llm_generated_olfactory'
-# BASE_DIR = '/proj/rep-learning-robotics/users/x_farzt/llm_generated_olfactory'
+# BASE_DIR = '/Volumes/work/phd/llm_generated_olfactory'
+BASE_DIR = '/proj/rep-learning-robotics/users/x_farzt/llm_generated_olfactory'
 
 ROJECT_DIR = os.path.join(BASE_DIR, 'codes')
 
