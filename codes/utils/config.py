@@ -91,7 +91,7 @@ RATE_RANGE = {
 #     # Add others as needed
 # }
 
-BUILD_PROMPT_CHOICES = ("bysmiles", "byname","bycid")
+BUILD_PROMPT_CHOICES = ("bysmiles", "byname","bycid", "bycidmem_name", "bycidmem_smiles")
 
 INCLUDE_CONFIDENCE = False
 

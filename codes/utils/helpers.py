@@ -361,7 +361,7 @@ def row_pair_inputs(row: pd.Series, build_prompt_type: str) -> Optional[Tuple[st
     - bysmiles -> use f"{INPUT_TYPE} stimulus 1/2"
     - byname   -> use "name stimulus 1/2"
     """
-    if build_prompt_type == "bysmiles":
+    if build_prompt_type == "bysmiles" or build_prompt_type == "bycidmem_smiles":
         col1 = pair_input_col(1, INPUT_TYPE)
         col2 = pair_input_col(2, INPUT_TYPE)
     else:
@@ -740,6 +740,45 @@ Output format:
 {json_block}
 """
 
+def build_prompt_bycidmem(
+    name: str,type:str
+) -> str:
+
+    return f"""Instructions:
+    You will be given a molecule in the form of {type}.
+    Return the correct CID.
+- Molecule {type}: {name}
+
+
+Output rules:
+- Return ONLY a single valid JSON object. No prose, no markdown.
+- Do NOT add extra keys.
+
+Output format:
+{{
+  "CID": <integer>
+}}"""
+
+def build_prompt_bycidmem_v2(
+    cid: str,type:str
+) -> str:
+
+    return f"""Instructions:
+    You will be given a molecule CID.
+    Return the correct {type}.
+- Molecule CID: {cid}
+
+
+Output rules:
+- Return ONLY a single valid JSON object. No prose, no markdown.
+- Do NOT add extra keys.
+
+Output format:
+{{
+  "{type}": <string>
+}}"""
+
+
 
 def build_prompt_bysmiles(
     x: Union[str, Tuple[str, str]],
@@ -854,6 +893,21 @@ def build_prompt_bycid(
     else:
         raise ValueError("not definde templace")
     return prompt_func(x, descriptors, rate_min, rate_max, include_confidence)
+
+
+# def build_prompt_cidmem(
+#     x: s) -> str:
+#     """
+#     Unified API compatible with previous code paths.
+#     - For single-item: x is a CID string.
+#     - For pairwise: x is a tuple (stimulus_1, stimulus_2), CIDs.
+#     """
+
+#     if isinstance(x, tuple):
+#         raise ValueError("For single-item prompts, pass a single CID string, not a tuple.")
+
+#     return build_prompt_bycidmem(x)  # same prompt for single or pairwise CID memory task
+
 
 
 def validate_response_single(
